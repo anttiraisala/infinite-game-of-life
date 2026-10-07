@@ -11,9 +11,9 @@ Conway's Game of Life with an unbounded board made of linked chunks, written in 
 
 Working prototype that runs in the browser (single HTML page, no dependencies).
 
-- `src/life-engine.js` – chunked infinite world (16x16 chunks, bit-packed rows), B/S rules, timeline (rewind/undo), cycle detection, RLE import/export
+- `src/life-engine.js` – chunked infinite world (16x16 chunks, bit-packed rows), B/S rules, timeline (rewind, undo/redo), cycle detection, RLE import/export
 - `src/patterns.js` – brush pattern library (RLE)
-- `src/app.js` + `src/template.html` – canvas UI: brushes, tools, selection, rule picker
+- `src/app.js` + `src/template.html` – canvas UI: brushes, tools, selection (drag to move or copy), rule picker
 - `src/test.js` – engine tests (compares against a naive implementation and known patterns)
 
 ## Quick start

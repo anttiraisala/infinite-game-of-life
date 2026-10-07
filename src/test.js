@@ -135,6 +135,51 @@ function period(rle, maxP) {
   ok(tl.undo() && norm(u.allCells()) === states[51], 'undo palauttaa tilan ennen muokkausta');
 }
 
+// 8b. redo
+{
+  const u = new Universe(); const tl = new Timeline(u, { interval: 10 });
+  tl.beforeEdit(); load(u, 'b2o$2ob$bo!'); tl.afterEdit();
+  for (let i = 0; i < 5; i++) { u.step(); tl.tick(); }
+  const s0 = norm(u.allCells());
+  tl.beforeEdit(); u.setCell(50, 50, true); tl.afterEdit(); const s1 = norm(u.allCells());
+  tl.beforeEdit(); u.setCell(60, 60, true); tl.afterEdit(); const s2 = norm(u.allCells());
+  ok(!tl.canRedo(), 'redo: nothing to redo before any undo');
+  ok(tl.undo() && norm(u.allCells()) === s1, 'redo: undo #1');
+  ok(tl.undo() && norm(u.allCells()) === s0, 'redo: undo #2');
+  ok(tl.canRedo() && tl.redo() && norm(u.allCells()) === s1, 'redo: redo #1');
+  ok(tl.redo() && norm(u.allCells()) === s2 && !tl.canRedo(), 'redo: redo #2');
+  ok(tl.undo() && norm(u.allCells()) === s1, 'redo: undo works again after redo');
+  ok(tl.redo() && norm(u.allCells()) === s2, 'redo: and redo again');
+  tl.undo();
+  tl.beforeEdit(); u.setCell(70, 70, true); tl.afterEdit();
+  ok(!tl.canRedo(), 'redo: a new edit clears the redo stack');
+  tl.undo(); u.step(); tl.tick();
+  ok(!tl.canRedo(), 'redo: stepping clears the redo stack');
+}
+
+// 8c. move / copy a rectangle
+{
+  const u = new Universe(); load(u, 'bo$2bo$3o!', 0, 0); load(u, '2o$2o!', 10, 0);
+  const all0 = norm(u.allCells());
+  ok(u.moveRect(0, 0, 3, 3, 100, 50, false) === 5 && norm(u.cellsInRect(100, 50, 103, 53)) === norm([1+100,0+50,2+100,1+50,0+100,2+50,1+100,2+50,2+100,2+50]) && u.cellsInRect(0, 0, 3, 3).length === 0, 'move: glider moved, source emptied');
+  ok(u.population === 9, 'move: population preserved');
+  u.moveRect(100, 50, 103, 53, -100, -50, false);
+  ok(norm(u.allCells()) === all0, 'move: moving back restores the original');
+  u.moveRect(0, 0, 3, 3, 40, -40, true);
+  ok(u.population === 14 && u.cellsInRect(0, 0, 3, 3).length === 10, 'move: copy keeps the original');
+  // opaque paste: destination rectangle is cleared first
+  const v = new Universe(); load(v, 'o!', 0, 0); load(v, '3o$3o$3o!', 10, 0);
+  v.moveRect(0, 0, 2, 2, 10, 0, false);
+  ok(v.population === 1 && v.getCell(10, 0), 'move: destination rectangle is overwritten');
+  // overlapping move and chunk boundary crossing
+  const w = new Universe(); load(w, 'bo$2bo$3o!', 14, 14);
+  w.moveRect(14, 14, 17, 17, 2, 3, false);
+  ok(w.population === 5 && w.getCell(17, 17) && w.getCell(18, 19), 'move: overlapping move across a chunk boundary');
+  // moved pattern still evolves correctly
+  for (let i = 0; i < 4; i++) w.step();
+  ok(w.population === 5, 'move: moved glider still flies');
+}
+
 // 9. RLE kierros
 {
   const src = 'b2o$2ob$bo!';

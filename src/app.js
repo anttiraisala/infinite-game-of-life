@@ -24,7 +24,7 @@ const S = {
   running: false, speedIdx: 4, jobLeft: 0, jobTotal: 0,
   tool: 'stamp', orient: 0, showChunks: false, showGrid: true,
   gap: 2, density: 0.35, radius: 6, eraseR: 4,
-  mouse: null, sel: null, brush: null, space: false, dirty: true
+  mouse: null, sel: null, dup: false, brush: null, space: false, dirty: true
 };
 const cam = { x: 0, y: 0, s: 14 };
 let W = 1, H = 1, dpr = 1;
@@ -251,6 +251,28 @@ function fitView() {
   cam.x = (b.minX + b.maxX + 1) / 2; cam.y = (b.minY + b.maxY + 1) / 2; S.dirty = true;
 }
 
+// ---------- selection move ----------
+const inSel = c => S.sel && c.x >= S.sel.x0 && c.x <= S.sel.x1 && c.y >= S.sel.y0 && c.y <= S.sel.y1;
+// Dragging inside the selection lifts its cells off the board (move) or leaves them (copy);
+// the drop is a single edit, so Undo/Redo treat the whole move as one step.
+function startMove(c, e) {
+  const r = { x0: S.sel.x0, y0: S.sel.y0, x1: S.sel.x1, y1: S.sel.y1 };
+  const copy = S.dup || e.ctrlKey || e.altKey, cells = U.cellsInRect(r.x0, r.y0, r.x1, r.y1);
+  G = { type: 'move', a: c, dx: 0, dy: 0, cells, copy, lifted: false, rect: r };
+  if (cells.length && !copy) { beginEdit(); U.clearRect(r.x0, r.y0, r.x1, r.y1); G.lifted = true; }
+  cvs.style.cursor = 'move';
+}
+function finishMove(g, cancel) {
+  const dx = cancel ? 0 : g.dx, dy = cancel ? 0 : g.dy, r = g.rect;
+  if (g.lifted) { U.pasteCells(g.cells, r, dx, dy); endEdit(); }
+  else if (g.copy && g.cells.length && (dx || dy)) edit(() => U.pasteCells(g.cells, r, dx, dy));
+  if (dx || dy) {
+    S.sel = { x0: r.x0 + dx, y0: r.y0 + dy, x1: r.x1 + dx, y1: r.y1 + dy };
+    toast(g.copy ? 'Copied selection' : 'Moved selection');
+  }
+  S.dirty = true;
+}
+
 // ---------- osoitin ----------
 const pointers = new Map();
 let G = null, pinch = null;
@@ -282,7 +304,10 @@ cvs.addEventListener('pointerdown', e => {
     case 'line': G = { type: 'line', a: c, b: c }; break;
     case 'rand': beginEdit(); randomDisc(c); G = { type: 'rand', last: c }; break;
     case 'erase': beginEdit(); eraseDisc(c); G = { type: 'erase', last: c }; break;
-    case 'select': G = { type: 'select', a: c, b: c }; S.sel = null; $('selbar').hidden = true; break;
+    case 'select':
+      if (S.sel && inSel(c)) startMove(c, e);
+      else { G = { type: 'select', a: c, b: c }; S.sel = null; $('selbar').hidden = true; }
+      break;
   }
   S.dirty = true;
 });
@@ -297,9 +322,10 @@ cvs.addEventListener('pointermove', e => {
     cam.x = pinch.wx - (mid.x - W / 2) / cam.s; cam.y = pinch.wy - (mid.y - H / 2) / cam.s;
     return;
   }
-  if (!G) return;
+  if (!G) { if (S.tool === 'select' && !S.space) cvs.style.cursor = S.sel && inSel(cellAt(p)) ? 'move' : 'crosshair'; return; }
   const c = cellAt(p);
-  if (G.type === 'pan') { cam.x = G.cx - (p.x - G.sx) / cam.s; cam.y = G.cy - (p.y - G.sy) / cam.s; }
+  if (G.type === 'move') { G.dx = c.x - G.a.x; G.dy = c.y - G.a.y; }
+  else if (G.type === 'pan') { cam.x = G.cx - (p.x - G.sx) / cam.s; cam.y = G.cy - (p.y - G.sy) / cam.s; }
   else if (G.type === 'draw') { bresenham(G.last, c, (x, y) => U.setCell(x, y, G.mode)); G.last = c; }
   else if (G.type === 'line' || G.type === 'select') G.b = c;
   else if (G.type === 'rand') { if (Math.hypot(c.x - G.last.x, c.y - G.last.y) >= Math.max(1, S.radius / 2)) { randomDisc(c); G.last = c; } }
@@ -309,6 +335,7 @@ function endGesture() {
   if (!G) return;
   const g = G; G = null;
   if (g.type === 'pan') cvs.style.cursor = S.tool === 'pan' ? 'grab' : 'crosshair';
+  else if (g.type === 'move') finishMove(g, false);
   else if (g.type === 'line') edit(() => { const v = brushView(S.brush, S.orient); linePositions(g.a, g.b).forEach(q => stampView(v, q.x, q.y)); });
   else if (g.type === 'select') {
     S.sel = { x0: Math.min(g.a.x, g.b.x), y0: Math.min(g.a.y, g.b.y), x1: Math.max(g.a.x, g.b.x), y1: Math.max(g.a.y, g.b.y) };
@@ -414,7 +441,12 @@ function render() {
   }
   if (S.tool === 'draw' && m && !G) { ctx.fillStyle = col.ghost; ctx.fillRect((m.x - cam.x) * s + W / 2, (m.y - cam.y) * s + H / 2, Math.max(2, s), Math.max(2, s)); }
   // valinta
-  const sel = G && G.type === 'select' ? { x0: Math.min(G.a.x, G.b.x), y0: Math.min(G.a.y, G.b.y), x1: Math.max(G.a.x, G.b.x), y1: Math.max(G.a.y, G.b.y) } : S.sel;
+  let sel = G && G.type === 'select' ? { x0: Math.min(G.a.x, G.b.x), y0: Math.min(G.a.y, G.b.y), x1: Math.max(G.a.x, G.b.x), y1: Math.max(G.a.y, G.b.y) } : S.sel;
+  if (G && G.type === 'move') {
+    const r = G.rect; sel = { x0: r.x0 + G.dx, y0: r.y0 + G.dy, x1: r.x1 + G.dx, y1: r.y1 + G.dy };
+    ctx.fillStyle = col.canvas; ctx.fillRect((sel.x0 - cam.x) * s + W / 2, (sel.y0 - cam.y) * s + H / 2, (sel.x1 - sel.x0 + 1) * s, (sel.y1 - sel.y0 + 1) * s);
+    drawCellList(G.cells, G.dx, G.dy, col.cell, 1);
+  }
   if (sel) {
     const rx = (sel.x0 - cam.x) * s + W / 2, ry = (sel.y0 - cam.y) * s + H / 2, rw = (sel.x1 - sel.x0 + 1) * s, rh = (sel.y1 - sel.y0 + 1) * s;
     ctx.globalAlpha = 0.1; ctx.fillStyle = col.accent; ctx.fillRect(rx, ry, rw, rh); ctx.globalAlpha = 1;
@@ -446,8 +478,14 @@ function doRewind(n) {
   CD.reset(); S.dirty = true; updateStatus(true);
 }
 function doUndo() {
+  if (G) return;
   setRunning(false); cancelJob();
   if (TL.undo()) { CD.reset(); S.dirty = true; updateStatus(true); toast('Edit undone'); } else toast('Nothing to undo');
+}
+function doRedo() {
+  if (G) return;
+  setRunning(false); cancelJob();
+  if (TL.redo()) { CD.reset(); S.dirty = true; updateStatus(true); toast('Edit redone'); } else toast('Nothing to redo');
 }
 function cancelJob() { S.jobLeft = 0; S.jobTotal = 0; S.resumeAfterJob = false; }
 function finishJob(resume) {
@@ -467,6 +505,8 @@ $('bBack1').addEventListener('click', () => doRewind(1));
 $('bBack10').addEventListener('click', () => doRewind(10));
 $('bJump').addEventListener('click', startJump);
 $('bUndo').addEventListener('click', doUndo);
+$('bRedo').addEventListener('click', doRedo);
+$('selDup').addEventListener('click', e => { S.dup = !S.dup; e.currentTarget.setAttribute('aria-pressed', String(S.dup)); });
 $('speed').addEventListener('input', e => { S.speedIdx = +e.target.value; updateSpeedLabel(); });
 function updateSpeedLabel() { const v = SPEEDS[S.speedIdx]; $('speedOut').textContent = v === 'turbo' ? 'Max' : v + ' gen/s'; }
 $('bZoomIn').addEventListener('click', () => zoomAt(1.5, W / 2, H / 2));
@@ -625,10 +665,14 @@ $('bLoad').addEventListener('click', () => {
 // ---------- näppäimistö ----------
 addEventListener('keydown', e => {
   const tag = (e.target.tagName || '').toLowerCase();
-  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(); else { clearSelection(); G = null; } return; }
+  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal();
+    else if (G && G.type === 'move') { const g = G; G = null; finishMove(g, true); }
+    else { clearSelection(); G = null; }
+    return; }
   if (tag === 'input' || tag === 'textarea' || tag === 'select' || !$('modal').hidden) return;
   const k = e.key.toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); doUndo(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); doRedo(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === ' ') { e.preventDefault(); S.space = true; if (!e.repeat) togglePlay(); return; }
   if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); doStep(); return; }
@@ -670,6 +714,7 @@ function updateStatus(force) {
   $('bJump').textContent = S.jobLeft > 0 ? 'Stop' : 'Jump';
   $('bBack1').disabled = $('bBack10').disabled = !TL.canRewind();
   $('bUndo').disabled = !TL.canUndo();
+  $('bRedo').disabled = !TL.canRedo();
 }
 let lastT = performance.now(), acc = 0;
 function frame(t) {

@@ -127,6 +127,7 @@ details dd { margin: 0; }
       <button id="bBack1" type="button" title="Back one generation (Left arrow)">−1</button>
       <button id="bBack10" type="button" title="Back ten generations (Shift + Left arrow)">−10</button>
       <button id="bUndo" type="button" title="Undo the last edit (Ctrl+Z)">Undo</button>
+      <button id="bRedo" type="button" title="Redo the undone edit (Ctrl+Y or Ctrl+Shift+Z)">Redo</button>
       <label for="speed">Speed <input id="speed" type="range" min="0" max="7" step="1" value="4"><output id="speedOut"></output></label>
       <span class="ctl"><input id="jumpN" type="number" min="1" max="10000000" value="100" aria-label="Number of generations to jump"><button id="bJump" type="button" title="Compute the given number of generations">Jump</button></span>
     </div>
@@ -206,7 +207,9 @@ details dd { margin: 0; }
           <dt>+ / −, wheel</dt><dd>Zoom in and out</dd>
           <dt>Right mouse</dt><dd>Pan the field (also Space + drag)</dd>
           <dt>Ctrl+Z</dt><dd>Undo edit</dd>
-          <dt>Esc</dt><dd>Cancel selection</dd>
+          <dt>Ctrl+Y, Ctrl+Shift+Z</dt><dd>Redo edit</dd>
+          <dt>Drag selection</dt><dd>Move it (Ctrl/Alt: copy)</dd>
+          <dt>Esc</dt><dd>Cancel selection or move</dd>
         </dl>
       </details>
     </aside>
@@ -221,6 +224,7 @@ details dd { margin: 0; }
       </div>
       <div id="selbar" class="float" hidden>
         <span id="selInfo"></span>
+        <button id="selDup" type="button" aria-pressed="false" title="When on, dragging the selection leaves the original in place (same as holding Ctrl or Alt)">Copy on drag</button>
         <button id="selCopy" type="button">Copy</button>
         <button id="selCut" type="button">Cut</button>
         <button id="selSave" type="button">Save as brush</button>

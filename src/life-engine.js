@@ -236,6 +236,22 @@ class Universe {
     return cells.length / 2;
   }
 
+  // Place a cell list (absolute coordinates) shifted by (dx, dy). The destination rectangle
+  // (source rect shifted by dx, dy) is cleared first, so the pasted block is opaque.
+  pasteCells(cells, rect, dx, dy) {
+    this.clearRect(rect.x0 + dx, rect.y0 + dy, rect.x1 + dx, rect.y1 + dy);
+    for (let i = 0; i < cells.length; i += 2) this.setCell(cells[i] + dx, cells[i + 1] + dy, true);
+  }
+
+  // Move (or copy) the contents of a rectangle by (dx, dy). Returns the number of cells moved.
+  moveRect(x0, y0, x1, y1, dx, dy, copy) {
+    const rect = { x0, y0, x1, y1 }, cells = this.cellsInRect(x0, y0, x1, y1);
+    if (dx === 0 && dy === 0) return cells.length / 2;
+    if (!copy) this.clearRect(x0, y0, x1, y1);
+    this.pasteCells(cells, rect, dx, dy);
+    return cells.length / 2;
+  }
+
   allCells() {
     const out = [];
     for (const [key, rows] of this.chunks) {
@@ -285,7 +301,7 @@ class Universe {
 class Timeline {
   constructor(u, opts) {
     opts = opts || {};
-    this.u = u; this.snaps = [];
+    this.u = u; this.snaps = []; this.redoStack = [];
     this.interval = opts.interval || 10;
     this.max = opts.max || 300;
     this.maxChunks = opts.maxChunks || 40000;
@@ -301,10 +317,11 @@ class Timeline {
     this.snaps.push(s);
     if (this.snaps.length > this.max) this.snaps.shift();
   }
-  beforeEdit() { this._push(true); }
+  beforeEdit() { this.redoStack = []; this._push(true); }
   afterEdit() { this._push(false); }
   tick() {
     const u = this.u;
+    if (this.redoStack.length) this.redoStack = [];
     if (u.generation % this.interval === 0 && u.chunks.size <= this.maxChunks) this._push(false);
   }
   canRewind() {
@@ -316,6 +333,7 @@ class Timeline {
     let idx = -1;
     for (let i = this.snaps.length - 1; i >= 0; i--) if (this.snaps[i].generation <= T) { idx = i; break; }
     if (idx < 0) return false;
+    this.redoStack = [];
     u.restore(this.snaps[idx]);
     this.snaps.length = idx + 1;
     while (u.generation < T) u.step();
@@ -325,15 +343,29 @@ class Timeline {
   undo() {
     for (let i = this.snaps.length - 1; i >= 0; i--) {
       if (this.snaps[i].pre) {
+        const before = this.u.snapshot();   // the state being undone, kept for redo
         this.u.restore(this.snaps[i]);
         this.snaps.length = i + 1;
         this.snaps[i].pre = false;
+        this.redoStack.push({ before, pre: this.snaps[i] });
         return true;
       }
     }
     return false;
   }
-  reset() { this.snaps = []; }
+  canRedo() { return this.redoStack.length > 0; }
+  redo() {
+    const r = this.redoStack.pop();
+    if (!r) return false;
+    this.u.restore(r.before);
+    r.pre.pre = true;                       // the edit can be undone again
+    const i = this.snaps.indexOf(r.pre);
+    if (i >= 0) this.snaps.length = i + 1; else this.snaps.push(r.pre);
+    r.before.pre = false;
+    this.snaps.push(r.before);
+    return true;
+  }
+  reset() { this.snaps = []; this.redoStack = []; }
 }
 
 // ---------- Syklintunnistus ----------
