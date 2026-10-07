@@ -1,0 +1,12 @@
+{
+  "name": "infinite-game-of-life",
+  "version": "0.1.0",
+  "description": "Conway's Game of Life on an unbounded board made of 16x16 chunks",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node src/test.js",
+    "build": "node src/build.js"
+  }
+}

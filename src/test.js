@@ -187,5 +187,5 @@ function period(rle, maxP) {
   }
 }
 
-console.log(fails ? '\n' + fails + ' EPÄONNISTUI' : '\nKaikki testit läpi');
+console.log(fails ? '\n' + fails + ' FAILED' : '\nAll tests passed');
 process.exit(fails ? 1 : 0);
