@@ -1,0 +1,260 @@
+<title>Infinite Game of Life</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: controls along the top, brush palette on the left, the rest is the unbounded field.
+   Palette: cooled paper grey and ink blue; the dark theme is a lab display with pale mint cells. */
+:root {
+  --bg: #e4eaeb; --panel: #f2f5f5; --panel2: #e1e8e9; --ink: #12222a; --muted: #566a72; --line: #c0cdd0;
+  --canvas: #f8fafa; --cell: #102a35; --grid: rgba(16,42,53,.10);
+  --chunkline: rgba(14,120,88,.38); --chunkfill: rgba(14,120,88,.05); --activefill: rgba(14,120,88,.17);
+  --accent: #1553d6; --accent-ink: #ffffff; --ghost: rgba(21,83,214,.62); --veil: rgba(242,245,245,.9);
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-head: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a1114; --panel: #101a1e; --panel2: #16252a; --ink: #dbe9e6; --muted: #8aa3a3; --line: #243940;
+    --canvas: #070d10; --cell: #cdf3e3; --grid: rgba(205,243,227,.07);
+    --chunkline: rgba(90,210,160,.42); --chunkfill: rgba(90,210,160,.05); --activefill: rgba(90,210,160,.17);
+    --accent: #6aa5ff; --accent-ink: #06101f; --ghost: rgba(106,165,255,.66); --veil: rgba(16,26,30,.9);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a1114; --panel: #101a1e; --panel2: #16252a; --ink: #dbe9e6; --muted: #8aa3a3; --line: #243940;
+  --canvas: #070d10; --cell: #cdf3e3; --grid: rgba(205,243,227,.07);
+  --chunkline: rgba(90,210,160,.42); --chunkfill: rgba(90,210,160,.05); --activefill: rgba(90,210,160,.17);
+  --accent: #6aa5ff; --accent-ink: #06101f; --ghost: rgba(106,165,255,.66); --veil: rgba(16,26,30,.9);
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 var(--font-body); overflow: hidden; }
+* { box-sizing: border-box; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; cursor: pointer; line-height: 1.2;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button[aria-pressed="true"]:not(.primary):not(.card) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+input[type=text], input[type=number], select, textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+input[type=range] { accent-color: var(--accent); }
+textarea { width: 100%; font-family: var(--font-mono); font-size: 12.5px; resize: vertical; }
+
+#app { display: flex; flex-direction: column; height: 100%; }
+#top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 8px; margin-right: 4px; }
+.brand h1 { margin: 0; font: 600 17px/1 var(--font-head); letter-spacing: .01em; white-space: nowrap; }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.ctl label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.ctl output { font-family: var(--font-mono); font-size: 12px; min-width: 7ch; color: var(--ink); }
+#speed { width: 110px; }
+#jumpN { width: 80px; }
+#rule { max-width: 190px; }
+#ruleIn { width: 130px; font-family: var(--font-mono); }
+#bPanel { display: none; }
+
+#main { flex: 1; min-height: 0; display: flex; position: relative; }
+#side { width: 300px; flex: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 12px 12px 20px; display: flex; flex-direction: column; gap: 12px; }
+h3 { margin: 0 0 6px; font: 600 11.5px/1.2 var(--font-head); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+.tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tools button { display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
+.tools kbd { font: 11px var(--font-mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.opts { display: grid; gap: 8px; }
+.opts label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; color: var(--muted); }
+.opts input[type=range] { grid-column: 1 / -1; width: 100%; }
+.opts output { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#brushName { font-family: var(--font-mono); font-size: 12px; color: var(--ink); margin-left: auto; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.card-wrap { position: relative; min-width: 0; }
+.card { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px 5px; background: var(--canvas); }
+.card canvas { width: 48px; height: 48px; }
+.card span { font-size: 11.5px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.card[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.del { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; padding: 0; line-height: 1; border-radius: 50%; font-size: 14px; }
+#palette section + section { margin-top: 14px; }
+a { color: var(--accent); }
+.hint { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+details { color: var(--muted); font-size: 12.5px; }
+details summary { cursor: pointer; font: 600 11.5px var(--font-head); text-transform: uppercase; letter-spacing: .09em; }
+details dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 8px 0 0; }
+details dt { font-family: var(--font-mono); color: var(--ink); }
+details dd { margin: 0; }
+
+#stage { position: relative; flex: 1; min-width: 0; background: var(--canvas); overflow: hidden; touch-action: none; }
+#cv { display: block; touch-action: none; }
+.float { position: absolute; background: var(--veil); border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(4px); }
+#zoomBox { top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; padding: 4px; }
+#zoomBox button { min-width: 36px; }
+#selbar { top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; align-items: center; max-width: calc(100% - 100px); }
+#selInfo { font-family: var(--font-mono); font-size: 12px; padding: 0 6px; }
+#status { left: 10px; bottom: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 6px 10px; font-size: 12px; pointer-events: none; }
+#status span.k { color: var(--muted); }
+#status b { font: 500 12.5px var(--font-mono); font-variant-numeric: tabular-nums; }
+#status .state { flex-basis: 100%; font-weight: 600; }
+#toast { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; max-width: calc(100% - 32px); z-index: 20; text-align: center; }
+
+#modal { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.45); }
+.dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.dialog h2 { margin: 0; font: 600 16px var(--font-head); }
+.dialog .foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.field { display: grid; gap: 6px; }
+.field input { width: 100%; }
+
+@media (max-width: 820px) {
+  #bPanel { display: inline-block; }
+  #side { position: absolute; left: 0; right: 0; bottom: 0; width: auto; max-height: 52%; z-index: 10; border-right: 0; border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,.18); transform: translateY(105%); transition: transform .18s ease; }
+  #side.open { transform: none; }
+  #speed { width: 90px; }
+  #status { bottom: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { #side { transition: none; } }
+</style>
+
+<div id="app">
+  <header id="top">
+    <div class="brand"><h1>Infinite Game of Life</h1></div>
+    <div class="ctl" role="group" aria-label="Simulation">
+      <button id="bPlay" class="primary" type="button" aria-pressed="false" title="Start or pause (Space)">Start</button>
+      <button id="bStep" type="button" title="Advance one generation (Right arrow)">Step</button>
+      <button id="bBack1" type="button" title="Back one generation (Left arrow)">−1</button>
+      <button id="bBack10" type="button" title="Back ten generations (Shift + Left arrow)">−10</button>
+      <button id="bUndo" type="button" title="Undo the last edit (Ctrl+Z)">Undo</button>
+      <label for="speed">Speed <input id="speed" type="range" min="0" max="7" step="1" value="4"><output id="speedOut"></output></label>
+      <span class="ctl"><input id="jumpN" type="number" min="1" max="10000000" value="100" aria-label="Number of generations to jump"><button id="bJump" type="button" title="Compute the given number of generations">Jump</button></span>
+    </div>
+    <div class="ctl" role="group" aria-label="World">
+      <label for="rule">Rule
+        <select id="rule">
+          <option value="B3/S23">Conway B3/S23</option>
+          <option value="B36/S23">HighLife B36/S23</option>
+          <option value="B2/S">Seeds B2/S</option>
+          <option value="B3678/S34678">Day &amp; Night B3678/S34678</option>
+          <option value="B3/S012345678">Life without Death</option>
+          <option value="B1357/S1357">Replicator</option>
+          <option value="B35678/S5678">Diamoeba</option>
+          <option value="B36/S125">2x2</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </label>
+      <input id="ruleIn" type="text" hidden placeholder="B3/S23" aria-label="Custom rule" spellcheck="false">
+      <button id="bGrid" type="button" aria-pressed="true" title="Grid (G)">Grid</button>
+      <button id="bChunks" type="button" aria-pressed="false" title="Show chunks and active regions (C)">Chunks</button>
+      <button id="bImport" type="button">Import RLE</button>
+      <button id="bExport" type="button">Export RLE</button>
+      <button id="bSave" type="button">Save</button>
+      <button id="bLoad" type="button">Load</button>
+      <button id="bClear" type="button">Clear</button>
+      <button id="bPanel" type="button">Brushes</button>
+    </div>
+  </header>
+
+  <div id="main">
+    <aside id="side" aria-label="Tools and brush palette">
+      <section>
+        <h3>Tool</h3>
+        <div class="tools">
+          <button type="button" data-tool="draw" aria-pressed="false">Draw <kbd>P</kbd></button>
+          <button type="button" data-tool="stamp" aria-pressed="true">Brush <kbd>B</kbd></button>
+          <button type="button" data-tool="line" aria-pressed="false">Line <kbd>L</kbd></button>
+          <button type="button" data-tool="rand" aria-pressed="false">Random <kbd>N</kbd></button>
+          <button type="button" data-tool="erase" aria-pressed="false">Erase <kbd>E</kbd></button>
+          <button type="button" data-tool="select" aria-pressed="false">Select <kbd>S</kbd></button>
+          <button type="button" data-tool="pan" aria-pressed="false">Pan <kbd>H</kbd></button>
+        </div>
+      </section>
+      <section id="brushRow">
+        <div class="row">
+          <button id="bRotL" type="button" title="Rotate 90° left (Shift+R)" aria-label="Rotate 90 degrees left">↺ 90°</button>
+          <button id="bRotR" type="button" title="Rotate 90° right (R)" aria-label="Rotate 90 degrees right">↻ 90°</button>
+          <button id="bRot180" type="button" title="Rotate 180° (D)" aria-label="Rotate 180 degrees">180°</button>
+          <button id="bFlip" type="button" title="Mirror (F)">Mirror</button>
+          <span id="brushName"></span>
+        </div>
+      </section>
+      <section id="opt-line" class="opts" hidden>
+        <label for="gap">Spacing between patterns <output id="gapOut">2</output><input id="gap" type="range" min="0" max="20" value="2"></label>
+        <p class="hint">Drag across the field: the selected pattern repeats along the line.</p>
+      </section>
+      <section id="opt-rand" class="opts" hidden>
+        <label for="dens">Density <output id="densOut">35 %</output><input id="dens" type="range" min="1" max="100" value="35"></label>
+        <label for="rad">Radius <output id="radOut">6</output><input id="rad" type="range" min="1" max="60" value="6"></label>
+        <p class="hint">Fills the area with random cells and replaces what was there.</p>
+      </section>
+      <section id="opt-erase" class="opts" hidden>
+        <label for="eraseR">Radius <output id="eraseOut">4</output><input id="eraseR" type="range" min="1" max="60" value="4"></label>
+      </section>
+      <div id="palette"></div>
+      <details>
+        <summary>Keyboard shortcuts</summary>
+        <dl>
+          <dt>Space</dt><dd>Start / pause</dd>
+          <dt>→ / Enter</dt><dd>Step forward</dd>
+          <dt>← / Shift+←</dt><dd>Back 1 / 10</dd>
+          <dt>R / Shift+R</dt><dd>Rotate right / left</dd>
+          <dt>D, F</dt><dd>Rotate 180°, mirror</dd>
+          <dt>P B L N E S H</dt><dd>Tools</dd>
+          <dt>G, C</dt><dd>Grid, chunks</dd>
+          <dt>O</dt><dd>Fit view to pattern</dd>
+          <dt>+ / −, wheel</dt><dd>Zoom in and out</dd>
+          <dt>Right mouse</dt><dd>Pan the field (also Space + drag)</dd>
+          <dt>Ctrl+Z</dt><dd>Undo edit</dd>
+          <dt>Esc</dt><dd>Cancel selection</dd>
+        </dl>
+      </details>
+    </aside>
+
+    <div id="stage">
+      <canvas id="cv" aria-label="Game of Life field"></canvas>
+      <div id="zoomBox" class="float">
+        <button id="bZoomIn" type="button" aria-label="Zoom in">+</button>
+        <button id="bZoomOut" type="button" aria-label="Zoom out">−</button>
+        <button id="bFit" type="button" title="Fit view to pattern (O)">Fit</button>
+        <button id="bHome" type="button" title="Go to origin">0,0</button>
+      </div>
+      <div id="selbar" class="float" hidden>
+        <span id="selInfo"></span>
+        <button id="selCopy" type="button">Copy</button>
+        <button id="selCut" type="button">Cut</button>
+        <button id="selSave" type="button">Save as brush</button>
+        <button id="selExport" type="button">Export RLE</button>
+        <button id="selDel" type="button">Delete</button>
+        <button id="selClose" type="button" aria-label="Close selection">×</button>
+      </div>
+      <div id="status" class="float" aria-live="off">
+        <span class="state" id="sState"></span>
+        <span><span class="k">Generation </span><b id="sGen">0</b></span>
+        <span><span class="k">Cells </span><b id="sPop">0</b></span>
+        <span><span class="k">Chunks </span><b id="sCh">0</b> <span class="k">(active </span><b id="sAct">0</b><span class="k">)</span></span>
+        <span><span class="k">Zoom </span><b id="sZoom"></b></span>
+        <span><span class="k">Cursor </span><b id="sPos">–</b></span>
+      </div>
+      <div id="toast" role="status" hidden></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h2 id="mTitle"></h2>
+    <div id="mBody"></div>
+    <div id="mFoot" class="foot"></div>
+  </div>
+</div>
+
+<script>
+/*__ENGINE__*/
+</script>
+<script>
+/*__PATTERNS__*/
+</script>
+<script>
+/*__APP__*/
+</script>
